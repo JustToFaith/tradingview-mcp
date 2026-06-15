@@ -10,6 +10,37 @@ Most-recent first. Newest at top, oldest at bottom. One line per change; longer 
 - Added fork declaration to top of `README.md`
 - Created this `CHANGES.md` to track local divergence
 
+### Local bug fixes (not from upstream PRs)
+Root causes documented in `trading-system` repo:
+`research/momentum/research-inputs/tradingview-issues-handoff.md`.
+
+- **Bug 1 — `tv data strategy|trades|equity` reads nothing / crashes**
+  (`src/core/data.js`, `getStrategyResults` / `getTrades` / `getEquity`).
+  Upstream filter was `metaInfo().is_price_study === false`, which matches most
+  indicators, so the code grabbed a non-strategy study and then crashed reading
+  its `_reportData` (`Cannot read properties of undefined`). Fixed filter to the
+  correct TV flag `metaInfo().isTVScriptStrategy`; reads now use the private
+  `_reportData` / `_performance` / `_ordersData` / `_tradesData` / `_equityData`
+  props behind try/catch guards (the public getters are observables that throw on
+  empty values). Commit `6c40f0f` + `22967ee`.
+  Verification: **filter logic + crash-safety verified at runtime** — a
+  non-strategy indicator is now correctly excluded and `tv data strategy` returns
+  `{success:true, metric_count:0}` instead of throwing. Full data-read e2e
+  (Net Profit / trades / equity) is **blocked**: no real `strategy()` script can
+  be put on the chart to exercise it — see Bug 3.
+- **Bug 2 — `tv pine save` sends Ctrl+S on macOS** (`src/core/pine.js`).
+  macOS TradingView only saves on Cmd+S; upstream hardcoded `modifiers: 2`
+  (Ctrl), so save was a no-op on mac. Added `process.platform === 'darwin'`
+  detection → `modifiers: 4` (Meta/Cmd). Commit `6c40f0f`.
+  Verification: **verified at runtime** — `tv pine save` on an existing script
+  returns `{success:true, action:"Cmd+S_dispatched"}` (was `Ctrl+S_dispatched`).
+- **Bug 3 — cannot add a `strategy()` to the chart via CDP** (not fixed).
+  TradingView blocks strategy (but not indicator) insertion over the CDP
+  untrusted-input path: `tv indicator add "<Strategy>"` returns
+  `{success:false, new_study_count:0}`. Confirmed live. This is a TV-side
+  security restriction, not a code bug — left as-is, documented so callers know
+  to add strategies manually in the Desktop UI.
+
 ### Adopted upstream PRs (batch + manual)
 Batch cherry-pick (all 10 clean, no conflicts):
 - #228 — fix "evaluate is not defined" in `scrollToDate` / `symbolInfo`
