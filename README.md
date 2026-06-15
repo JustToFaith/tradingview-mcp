@@ -1,7 +1,7 @@
 # TradingView MCP Bridge
 
 > [!NOTE]
-> **This is a personal fork of [tradesdontlie/tradingview-mcp](https://github.com/tradesdontlie/tradingview-mcp).** The upstream is the original project; this fork is maintained for personal use and may diverge. See [CHANGES.md](CHANGES.md) for what has been modified locally. Upstream commits can be pulled via `git fetch upstream && git cherry-pick <sha>`.
+> **This is a personal fork of [tradesdontlie/tradingview-mcp](https://github.com/tradesdontlie/tradingview-mcp).** The upstream is the original project; this fork is maintained for personal use and may diverge. See [CHANGES.md](CHANGES.md) for what has been modified locally and [WORKFLOW.md](WORKFLOW.md) for the upstream-sync + PR-adoption workflow.
 
 Personal AI assistant for your TradingView Desktop charts. Connects Claude Code to your locally running TradingView app via Chrome DevTools Protocol for AI-assisted chart analysis, Pine Script development, and workflow automation.
 
