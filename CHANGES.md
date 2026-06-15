@@ -23,11 +23,17 @@ Root causes documented in `trading-system` repo:
   `_reportData` / `_performance` / `_ordersData` / `_tradesData` / `_equityData`
   props behind try/catch guards (the public getters are observables that throw on
   empty values). Commit `6c40f0f` + `22967ee`.
-  Verification: **filter logic + crash-safety verified at runtime** — a
-  non-strategy indicator is now correctly excluded and `tv data strategy` returns
-  `{success:true, metric_count:0}` instead of throwing. Full data-read e2e
-  (Net Profit / trades / equity) is **blocked**: no real `strategy()` script can
-  be put on the chart to exercise it — see Bug 3.
+  Verification: **filter logic + crash-safety verified at runtime**. Confirmed
+  via `chart.model().model().dataSources()` (the same path `data.js` uses) that a
+  real `strategy()` study (TSMOM_12_1_test) is correctly matched by
+  `isTVScriptStrategy` while indicators are excluded, and that `tv data strategy`
+  returns `{success:true, metric_count:0}` instead of throwing on a null report.
+  Full data-read e2e (non-null Net Profit / trades / equity) is **blocked by
+  Bug 3**, not by this code: `s.reportData()` returns null because no strategy is
+  activated on the backtest engine — the Strategy Tester panel itself reads
+  "add a strategy to this chart". Bug 1's read path is sound; it simply cannot
+  be exercised end-to-end over CDP until a strategy is running, which Bug 3
+  prevents.
 - **Bug 2 — `tv pine save` sends Ctrl+S on macOS** (`src/core/pine.js`).
   macOS TradingView only saves on Cmd+S; upstream hardcoded `modifiers: 2`
   (Ctrl), so save was a no-op on mac. Added `process.platform === 'darwin'`
