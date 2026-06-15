@@ -155,20 +155,29 @@ export async function getStrategyResults() {
           // Pine strategies run on the main price chart (is_price_study === true),
           // so the old is_price_study === false filter excluded them. Data lives
           // in private _reportData / _performance props (not the reportData getter).
-          if (s.metaInfo && s.metaInfo().isTVScriptStrategy && (s._reportData || s._performance || s.reportData)) { strat = s; break; }
+          if (s.metaInfo && s.metaInfo().isTVScriptStrategy) { strat = s; break; }
         }
         if (!strat) return {metrics: {}, source: 'internal_api', error: 'No strategy found on chart. Add a strategy indicator first.'};
         var metrics = {};
-        var rd = strat._reportData || strat.reportData;
-        if (typeof rd === 'function') rd = rd();
+        // reportData: private _reportData value (may be empty {} before a run),
+        // else the reportData() getter (older TV builds).
+        var rd = null;
+        try {
+          if (strat._reportData && Object.keys(strat._reportData).length > 0) rd = strat._reportData;
+          else if (typeof strat.reportData === 'function') { var r = strat.reportData(); if (r && Object.keys(r).length > 0) rd = r; }
+        } catch(e) {}
         if (rd && typeof rd.value === 'function') rd = rd.value();
         if (rd && typeof rd === 'object') {
           var keys = Object.keys(rd);
           for (var k = 0; k < keys.length; k++) { var val = rd[keys[k]]; if (val !== null && val !== undefined && typeof val !== 'function') metrics[keys[k]] = val; }
         }
-        if (Object.keys(metrics).length === 0 && (strat._performance || strat.performance)) {
-          var perf = strat._performance || (typeof strat.performance === 'function' ? strat.performance() : strat.performance);
-          if (typeof perf === 'function') perf = perf();
+        // performance: performance() method (current TV) or _performance prop.
+        if (Object.keys(metrics).length === 0) {
+          var perf = null;
+          try {
+            if (strat._performance && Object.keys(strat._performance).length > 0) perf = strat._performance;
+            else if (typeof strat.performance === 'function') perf = strat.performance();
+          } catch(e) {}
           if (perf && typeof perf.value === 'function') perf = perf.value();
           if (perf && typeof perf === 'object') { var pkeys = Object.keys(perf); for (var p = 0; p < pkeys.length; p++) { var pval = perf[pkeys[p]]; if (pval !== null && pval !== undefined && typeof pval !== 'function') metrics[pkeys[p]] = pval; } }
         }
