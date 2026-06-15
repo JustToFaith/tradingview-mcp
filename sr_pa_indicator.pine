@@ -1,0 +1,302 @@
+//@version=6
+indicator("S/R + PA + EMA + VWAP + RSI", overlay=true, max_boxes_count=100, max_lines_count=100, max_labels_count=100)
+
+// ══════════════════════════════════════════════
+//  INPUTS
+// ══════════════════════════════════════════════
+grp_sr  = "Support & Resistance"
+grp_sig = "Signals"
+grp_ind = "Indicators"
+grp_col = "Colors"
+
+pivot_len    = input.int   (10,   "Pivot Lookback",             minval=3,    maxval=50,  group=grp_sr)
+max_levels   = input.int   (5,    "Max Levels Each Side",       minval=3,    maxval=10,  group=grp_sr)
+zone_width   = input.float (0.15, "Zone Width %",               minval=0.05, maxval=1.0, step=0.05, group=grp_sr)
+atr_touch    = input.float (0.5,  "ATR Touch Threshold (xATR)", minval=0.1,  maxval=3.0, step=0.1,  group=grp_sr)
+extend_bars  = input.int   (40,   "Extend Zones Right (bars)",  minval=5,    maxval=200, group=grp_sr)
+
+min_body_atr = input.float (0.4,  "Min Candle Body (xATR)",     minval=0.1,  maxval=2.0, step=0.1, group=grp_sig)
+show_labels  = input.bool  (true, "Show BUY/SELL on Chart",                              group=grp_sig)
+show_table   = input.bool  (true, "Show Table",                                          group=grp_sig)
+
+ema_fast_len = input.int   (9,    "EMA Fast",  minval=1, maxval=50,  group=grp_ind)
+ema_slow_len = input.int   (21,   "EMA Slow",  minval=2, maxval=200, group=grp_ind)
+rsi_len      = input.int   (14,   "RSI Length",minval=2, maxval=50,  group=grp_ind)
+rsi_ob       = input.int   (65,   "RSI Overbought",  minval=55, maxval=90, group=grp_ind)
+rsi_os       = input.int   (35,   "RSI Oversold",    minval=10, maxval=45, group=grp_ind)
+show_emas    = input.bool  (true, "Show EMAs on Chart", group=grp_ind)
+show_vwap    = input.bool  (true, "Show VWAP on Chart", group=grp_ind)
+
+res_col  = input.color(color.new(#FF4444, 75), "Resistance Zone", group=grp_col)
+sup_col  = input.color(color.new(#2196F3, 75), "Support Zone",    group=grp_col)
+buy_col  = input.color(#00E676,                "Buy Signal",       group=grp_col)
+sell_col = input.color(#FF1744,                "Sell Signal",      group=grp_col)
+wait_col = input.color(#FFD600,                "Wait Signal",      group=grp_col)
+
+// ══════════════════════════════════════════════
+//  INDICATORS
+// ══════════════════════════════════════════════
+atr      = ta.atr(14)
+ema_fast = ta.ema(close, ema_fast_len)
+ema_slow = ta.ema(close, ema_slow_len)
+rsi      = ta.rsi(close, rsi_len)
+vwap_val = ta.vwap(hlc3)
+
+plot(show_emas ? ema_fast : na, "EMA Fast", color=color.new(#FFD600, 0), linewidth=1)
+plot(show_emas ? ema_slow : na, "EMA Slow", color=color.new(#FF6B6B, 0), linewidth=1)
+plot(show_vwap ? vwap_val : na, "VWAP", color=color.new(#CE93D8, 0), linewidth=1, style=plot.style_stepline)
+
+// ══════════════════════════════════════════════
+//  TREND & CONFIRMATION FLAGS
+// ══════════════════════════════════════════════
+bull_trend  = ema_fast > ema_slow                  // EMAs bullish alignment
+bear_trend  = ema_fast < ema_slow                  // EMAs bearish alignment
+above_vwap  = close >= vwap_val
+below_vwap  = close <= vwap_val
+rsi_neutral = rsi > rsi_os and rsi < rsi_ob        // RSI in middle zone
+rsi_buy_ok  = rsi < rsi_ob                         // not overbought
+rsi_sell_ok = rsi > rsi_os                         // not oversold
+
+// ══════════════════════════════════════════════
+//  S/R PIVOT DETECTION
+// ══════════════════════════════════════════════
+ph = ta.pivothigh(high, pivot_len, pivot_len)
+pl = ta.pivotlow (low,  pivot_len, pivot_len)
+
+var float[] r_lvl  = array.new_float(0)
+var int[]   r_time = array.new_int(0)
+var float[] s_lvl  = array.new_float(0)
+var int[]   s_time = array.new_int(0)
+
+f_dup(arr, lvl, pct) =>
+    bool found = false
+    sz = array.size(arr)
+    if sz > 0
+        for i = 0 to sz - 1
+            if math.abs(array.get(arr, i) - lvl) / lvl < pct / 100.0
+                found := true
+    found
+
+if not na(ph)
+    if not f_dup(r_lvl, ph, zone_width)
+        array.unshift(r_lvl,  ph)
+        array.unshift(r_time, bar_index[pivot_len])
+        if array.size(r_lvl) > max_levels
+            array.pop(r_lvl)
+            array.pop(r_time)
+
+if not na(pl)
+    if not f_dup(s_lvl, pl, zone_width)
+        array.unshift(s_lvl,  pl)
+        array.unshift(s_time, bar_index[pivot_len])
+        if array.size(s_lvl) > max_levels
+            array.pop(s_lvl)
+            array.pop(s_time)
+
+// ══════════════════════════════════════════════
+//  DRAW S/R ZONES
+// ══════════════════════════════════════════════
+var box[] r_boxes = array.new_box(0)
+var box[] s_boxes = array.new_box(0)
+
+if barstate.islast
+    for b in r_boxes
+        box.delete(b)
+    array.clear(r_boxes)
+    for b in s_boxes
+        box.delete(b)
+    array.clear(s_boxes)
+
+    half      = atr * 0.3
+    safe_left = math.max(bar_index - 500, 0)
+
+    if array.size(r_lvl) > 0
+        for i = 0 to array.size(r_lvl) - 1
+            lvl = array.get(r_lvl, i)
+            t   = math.max(array.get(r_time, i), safe_left)
+            lbl = "R" + str.tostring(i + 1) + " " + str.tostring(lvl, "#.##")
+            b   = box.new(t, lvl + half, bar_index + extend_bars, lvl - half, border_color=color.new(#FF4444, 30), bgcolor=res_col, border_width=1, text=lbl, text_color=color.new(#FF4444, 0), text_size=size.tiny, text_halign=text.align_right)
+            array.push(r_boxes, b)
+
+    if array.size(s_lvl) > 0
+        for i = 0 to array.size(s_lvl) - 1
+            lvl = array.get(s_lvl, i)
+            t   = math.max(array.get(s_time, i), safe_left)
+            lbl = "S" + str.tostring(i + 1) + " " + str.tostring(lvl, "#.##")
+            b   = box.new(t, lvl + half, bar_index + extend_bars, lvl - half, border_color=color.new(#2196F3, 30), bgcolor=sup_col, border_width=1, text=lbl, text_color=color.new(#2196F3, 0), text_size=size.tiny, text_halign=text.align_right)
+            array.push(s_boxes, b)
+
+// ══════════════════════════════════════════════
+//  PRICE ACTION PATTERNS
+// ══════════════════════════════════════════════
+body       = math.abs(close - open)
+rng        = high - low
+upper_wick = high - math.max(close, open)
+lower_wick = math.min(close, open) - low
+bull_bar   = close > open
+bear_bar   = close < open
+is_major   = body >= atr * min_body_atr
+
+bull_pin    = lower_wick >= body * 2.0 and lower_wick >= upper_wick * 2.0 and rng > 0 and body / rng > 0.05
+bear_pin    = upper_wick >= body * 2.0 and upper_wick >= lower_wick * 2.0 and rng > 0 and body / rng > 0.05
+bull_engulf = bull_bar and bear_bar[1] and open <= close[1] and close >= open[1] and body > body[1] * 0.8
+bear_engulf = bear_bar and bull_bar[1] and open >= close[1] and close <= open[1] and body > body[1] * 0.8
+doji        = body <= rng * 0.15 and rng > 0
+inside_bar  = high < high[1] and low > low[1]
+
+bull_pa    = (bull_pin or bull_engulf) and is_major
+bear_pa    = (bear_pin or bear_engulf) and is_major
+indecision = doji or inside_bar
+
+// ══════════════════════════════════════════════
+//  S/R PROXIMITY
+// ══════════════════════════════════════════════
+thresh = atr * atr_touch
+
+f_near_sup() =>
+    bool found = false
+    if array.size(s_lvl) > 0
+        for i = 0 to array.size(s_lvl) - 1
+            if math.abs(close - array.get(s_lvl, i)) <= thresh
+                found := true
+    found
+
+f_near_res() =>
+    bool found = false
+    if array.size(r_lvl) > 0
+        for i = 0 to array.size(r_lvl) - 1
+            if math.abs(close - array.get(r_lvl, i)) <= thresh
+                found := true
+    found
+
+at_sup = f_near_sup()
+at_res = f_near_res()
+
+// ══════════════════════════════════════════════
+//  SIGNAL LOGIC
+//  Trigger  : S/R level + bullish/bearish PA  (always fires if these two align)
+//  Strength : score EMA + VWAP + RSI  → STRONG / normal / WAIT
+// ══════════════════════════════════════════════
+
+// Core trigger — price at level with confirmed price action
+buy_sig  = at_sup and bull_pa
+sell_sig = at_res and bear_pa
+wait_sig = (at_sup or at_res) and indecision and not buy_sig and not sell_sig
+
+// Confluence score  (each extra confirmation adds 1)
+buy_score  = (bull_trend ? 1 : 0) + (above_vwap ? 1 : 0) + (rsi_buy_ok ? 1 : 0)
+sell_score = (bear_trend ? 1 : 0) + (below_vwap ? 1 : 0) + (rsi_sell_ok ? 1 : 0)
+
+// Label: STRONG BUY (3/3) · BUY (1-2/3) · WAIT · —
+buy_strong  = buy_sig  and buy_score  == 3
+sell_strong = sell_sig and sell_score == 3
+
+pa_tag() =>
+    bull_pin    ? " Pin Bar"    :
+     bull_engulf ? " Engulfing"  :
+     bear_pin    ? " Pin Bar"    :
+     bear_engulf ? " Engulfing"  :
+     doji        ? " Doji"       :
+     inside_bar  ? " Inside Bar" : ""
+
+// ── Chart labels ──
+if buy_sig and show_labels
+    lbl = buy_strong ? "STRONG BUY" + pa_tag() : "BUY" + pa_tag()
+    label.new(bar_index, low - atr * 0.5, lbl, style=label.style_label_up, color=buy_col, textcolor=color.black, size=size.small)
+
+if sell_sig and show_labels
+    lbl = sell_strong ? "STRONG SELL" + pa_tag() : "SELL" + pa_tag()
+    label.new(bar_index, high + atr * 0.5, lbl, style=label.style_label_down, color=sell_col, textcolor=color.white, size=size.small)
+
+// ══════════════════════════════════════════════
+//  TABLE
+// ══════════════════════════════════════════════
+chk(cond)     => cond ? "✓" : "✗"
+chk_col(cond) => cond ? color.new(#00E676, 0) : color.new(color.gray, 40)
+
+var table tbl = table.new(position.top_right, 2, 14, bgcolor=color.new(color.black, 82), border_width=1, border_color=color.new(color.gray, 65), frame_width=1, frame_color=color.new(color.gray, 50))
+
+if barstate.islast and show_table
+    // ── Header ──
+    table.cell(tbl, 0, 0, syminfo.ticker + " · " + timeframe.period, text_color=color.white, text_size=size.tiny, bgcolor=color.new(color.gray, 58), text_halign=text.align_left)
+    table.cell(tbl, 1, 0, "ATR " + str.tostring(math.round(atr, 1)), text_color=color.new(color.gray, 10), text_size=size.tiny, bgcolor=color.new(color.gray, 58), text_halign=text.align_right)
+
+    // ── Resistance ──
+    r_count = math.min(array.size(r_lvl), 3)
+    for i = 0 to r_count - 1
+        lvl  = array.get(r_lvl, i)
+        dist = (lvl - close) / close * 100.0
+        table.cell(tbl, 0, 1 + i, "R" + str.tostring(i + 1) + "  " + str.tostring(lvl, "#.##"), text_color=color.new(#FF6B6B, 0), text_size=size.tiny, text_halign=text.align_left)
+        table.cell(tbl, 1, 1 + i, "+" + str.tostring(dist, "#.1") + "%", text_color=color.new(#FF6B6B, 0), text_size=size.tiny, text_halign=text.align_right)
+    if r_count < 3
+        for i = r_count to 2
+            table.cell(tbl, 0, 1 + i, "—", text_color=color.new(color.gray, 40), text_size=size.tiny)
+            table.cell(tbl, 1, 1 + i, "",  text_color=color.gray, text_size=size.tiny)
+
+    // ── Support ──
+    s_count = math.min(array.size(s_lvl), 3)
+    for i = 0 to s_count - 1
+        lvl  = array.get(s_lvl, i)
+        dist = (close - lvl) / close * 100.0
+        table.cell(tbl, 0, 4 + i, "S" + str.tostring(i + 1) + "  " + str.tostring(lvl, "#.##"), text_color=color.new(#64B5F6, 0), text_size=size.tiny, text_halign=text.align_left)
+        table.cell(tbl, 1, 4 + i, "-" + str.tostring(dist, "#.1") + "%", text_color=color.new(#64B5F6, 0), text_size=size.tiny, text_halign=text.align_right)
+    if s_count < 3
+        for i = s_count to 2
+            table.cell(tbl, 0, 4 + i, "—", text_color=color.new(color.gray, 40), text_size=size.tiny)
+            table.cell(tbl, 1, 4 + i, "",  text_color=color.gray, text_size=size.tiny)
+
+    // ── Indicator readings ──
+    ema_col   = bull_trend ? color.new(#00E676, 0) : color.new(#FF6B6B, 0)
+    ema_trend = bull_trend ? "Bull" : "Bear"
+    table.cell(tbl, 0, 7, "EMA " + str.tostring(ema_fast_len) + "/" + str.tostring(ema_slow_len), text_color=color.new(color.gray, 10), text_size=size.tiny, text_halign=text.align_left)
+    table.cell(tbl, 1, 7, ema_trend + "  " + str.tostring(ema_fast, "#.##"), text_color=ema_col, text_size=size.tiny, text_halign=text.align_right)
+
+    vwap_col = above_vwap ? color.new(#00E676, 0) : color.new(#FF6B6B, 0)
+    vwap_lbl = above_vwap ? "Above" : "Below"
+    table.cell(tbl, 0, 8, "VWAP " + str.tostring(vwap_val, "#.##"), text_color=color.new(color.gray, 10), text_size=size.tiny, text_halign=text.align_left)
+    table.cell(tbl, 1, 8, vwap_lbl, text_color=vwap_col, text_size=size.tiny, text_halign=text.align_right)
+
+    rsi_col = rsi > rsi_ob ? color.new(#FF6B6B, 0) : rsi < rsi_os ? color.new(#64B5F6, 0) : color.new(#00E676, 0)
+    rsi_lbl = rsi > rsi_ob ? "OB" : rsi < rsi_os ? "OS" : "OK"
+    table.cell(tbl, 0, 9, "RSI(" + str.tostring(rsi_len) + ")", text_color=color.new(color.gray, 10), text_size=size.tiny, text_halign=text.align_left)
+    table.cell(tbl, 1, 9, str.tostring(math.round(rsi, 1)) + "  " + rsi_lbl, text_color=rsi_col, text_size=size.tiny, text_halign=text.align_right)
+
+    // ── Divider ──
+    table.cell(tbl, 0, 10, "", text_color=color.gray, text_size=size.tiny, bgcolor=color.new(color.gray, 80))
+    table.cell(tbl, 1, 10, "", text_color=color.gray, text_size=size.tiny, bgcolor=color.new(color.gray, 80))
+
+    // ── Confluence checklist ──
+    if buy_sig or (at_sup and not sell_sig)
+        table.cell(tbl, 0, 11, "At Support",    text_color=chk_col(at_sup),              text_size=size.tiny)
+        table.cell(tbl, 1, 11, chk(at_sup),     text_color=chk_col(at_sup),              text_size=size.tiny, text_halign=text.align_right)
+        table.cell(tbl, 0, 12, "Bull PA · EMA", text_color=chk_col(bull_pa and bull_trend), text_size=size.tiny)
+        table.cell(tbl, 1, 12, chk(bull_pa and bull_trend), text_color=chk_col(bull_pa and bull_trend), text_size=size.tiny, text_halign=text.align_right)
+    else
+        table.cell(tbl, 0, 11, "At Resist.",    text_color=chk_col(at_res),              text_size=size.tiny)
+        table.cell(tbl, 1, 11, chk(at_res),     text_color=chk_col(at_res),              text_size=size.tiny, text_halign=text.align_right)
+        table.cell(tbl, 0, 12, "Bear PA · EMA", text_color=chk_col(bear_pa and bear_trend), text_size=size.tiny)
+        table.cell(tbl, 1, 12, chk(bear_pa and bear_trend), text_color=chk_col(bear_pa and bear_trend), text_size=size.tiny, text_halign=text.align_right)
+
+    // ── Main signal row ──
+    sig_txt = buy_strong  ? "STRONG BUY"  :
+              buy_sig     ? "BUY " + str.tostring(buy_score) + "/3" :
+              sell_strong ? "STRONG SELL" :
+              sell_sig    ? "SELL " + str.tostring(sell_score) + "/3" :
+              wait_sig    ? "WAIT" : "—"
+    sig_bg  = (buy_sig  or buy_strong)  ? color.new(buy_col,  15) :
+              (sell_sig or sell_strong) ? color.new(sell_col, 15) :
+              wait_sig                  ? color.new(wait_col, 20) : color.new(color.gray, 75)
+    sig_tc  = (buy_sig  or buy_strong)  ? color.black :
+              (sell_sig or sell_strong) ? color.white :
+              wait_sig                  ? color.black : color.new(color.gray, 20)
+    table.cell(tbl, 0, 13, "SIGNAL", text_color=color.white, text_size=size.small, bgcolor=sig_bg, text_halign=text.align_left)
+    table.cell(tbl, 1, 13, sig_txt,  text_color=sig_tc,      text_size=size.small, bgcolor=sig_bg, text_halign=text.align_right)
+
+// ══════════════════════════════════════════════
+//  ALERTS
+// ══════════════════════════════════════════════
+alertcondition(buy_sig,    "BUY",         "BUY: {{ticker}} {{interval}} at support @ {{close}}")
+alertcondition(buy_strong, "STRONG BUY",  "STRONG BUY: {{ticker}} {{interval}} full confluence @ {{close}}")
+alertcondition(sell_sig,   "SELL",        "SELL: {{ticker}} {{interval}} at resistance @ {{close}}")
+alertcondition(sell_strong,"STRONG SELL", "STRONG SELL: {{ticker}} {{interval}} full confluence @ {{close}}")
+alertcondition(wait_sig,   "WAIT",        "WAIT: {{ticker}} {{interval}} indecision at level @ {{close}}")
