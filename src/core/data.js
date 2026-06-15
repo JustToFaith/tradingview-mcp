@@ -151,19 +151,24 @@ export async function getStrategyResults() {
         var strat = null;
         for (var i = 0; i < sources.length; i++) {
           var s = sources[i];
-          if (s.metaInfo && s.metaInfo().is_price_study === false && (s.reportData || s.performance)) { strat = s; break; }
+          // Strategy detection: use isTVScriptStrategy, NOT is_price_study.
+          // Pine strategies run on the main price chart (is_price_study === true),
+          // so the old is_price_study === false filter excluded them. Data lives
+          // in private _reportData / _performance props (not the reportData getter).
+          if (s.metaInfo && s.metaInfo().isTVScriptStrategy && (s._reportData || s._performance || s.reportData)) { strat = s; break; }
         }
         if (!strat) return {metrics: {}, source: 'internal_api', error: 'No strategy found on chart. Add a strategy indicator first.'};
         var metrics = {};
-        if (strat.reportData) {
-          var rd = typeof strat.reportData === 'function' ? strat.reportData() : strat.reportData;
-          if (rd && typeof rd === 'object') {
-            if (typeof rd.value === 'function') rd = rd.value();
-            if (rd) { var keys = Object.keys(rd); for (var k = 0; k < keys.length; k++) { var val = rd[keys[k]]; if (val !== null && val !== undefined && typeof val !== 'function') metrics[keys[k]] = val; } }
-          }
+        var rd = strat._reportData || strat.reportData;
+        if (typeof rd === 'function') rd = rd();
+        if (rd && typeof rd.value === 'function') rd = rd.value();
+        if (rd && typeof rd === 'object') {
+          var keys = Object.keys(rd);
+          for (var k = 0; k < keys.length; k++) { var val = rd[keys[k]]; if (val !== null && val !== undefined && typeof val !== 'function') metrics[keys[k]] = val; }
         }
-        if (Object.keys(metrics).length === 0 && strat.performance) {
-          var perf = strat.performance();
+        if (Object.keys(metrics).length === 0 && (strat._performance || strat.performance)) {
+          var perf = strat._performance || (typeof strat.performance === 'function' ? strat.performance() : strat.performance);
+          if (typeof perf === 'function') perf = perf();
           if (perf && typeof perf.value === 'function') perf = perf.value();
           if (perf && typeof perf === 'object') { var pkeys = Object.keys(perf); for (var p = 0; p < pkeys.length; p++) { var pval = perf[pkeys[p]]; if (pval !== null && pval !== undefined && typeof pval !== 'function') metrics[pkeys[p]] = pval; } }
         }
@@ -184,15 +189,15 @@ export async function getTrades({ max_trades } = {}) {
         var strat = null;
         for (var i = 0; i < sources.length; i++) {
           var s = sources[i];
-          if (s.metaInfo && s.metaInfo().is_price_study === false && (s.ordersData || s.reportData)) { strat = s; break; }
+          // Use isTVScriptStrategy (see getStrategyResults for rationale)
+          if (s.metaInfo && s.metaInfo().isTVScriptStrategy && (s._ordersData || s._tradesData || s._reportData)) { strat = s; break; }
         }
         if (!strat) return {trades: [], source: 'internal_api', error: 'No strategy found on chart.'};
         var orders = null;
-        if (strat.ordersData) { orders = typeof strat.ordersData === 'function' ? strat.ordersData() : strat.ordersData; if (orders && typeof orders.value === 'function') orders = orders.value(); }
-        if (!orders || !Array.isArray(orders)) {
-          if (strat._orders) orders = strat._orders;
-          else if (strat.tradesData) { orders = typeof strat.tradesData === 'function' ? strat.tradesData() : strat.tradesData; if (orders && typeof orders.value === 'function') orders = orders.value(); }
-        }
+        // Prefer private _ordersData / _tradesData; reportData.trades is a fallback.
+        if (strat._ordersData) { orders = typeof strat._ordersData === 'function' ? strat._ordersData() : strat._ordersData; if (orders && typeof orders.value === 'function') orders = orders.value(); }
+        if ((!orders || !Array.isArray(orders)) && strat._tradesData) { orders = typeof strat._tradesData === 'function' ? strat._tradesData() : strat._tradesData; if (orders && typeof orders.value === 'function') orders = orders.value(); }
+        if ((!orders || !Array.isArray(orders)) && strat._reportData && strat._reportData.trades) { orders = strat._reportData.trades; }
         if (!orders || !Array.isArray(orders)) return {trades: [], source: 'internal_api', error: 'ordersData() returned non-array.'};
         var result = [];
         for (var t = 0; t < Math.min(orders.length, ${limit}); t++) {
@@ -220,15 +225,15 @@ export async function getEquity() {
         var strat = null;
         for (var i = 0; i < sources.length; i++) {
           var s = sources[i];
-          if (s.metaInfo && s.metaInfo().is_price_study === false && (s.reportData || s.performance)) { strat = s; break; }
+          // Use isTVScriptStrategy (see getStrategyResults for rationale)
+          if (s.metaInfo && s.metaInfo().isTVScriptStrategy && (s._equityData || s.equityData || s._reportData)) { strat = s; break; }
         }
         if (!strat) return {data: [], source: 'internal_api', error: 'No strategy found on chart.'};
         var data = [];
-        if (strat.equityData) {
-          var eq = typeof strat.equityData === 'function' ? strat.equityData() : strat.equityData;
-          if (eq && typeof eq.value === 'function') eq = eq.value();
-          if (Array.isArray(eq)) data = eq;
-        }
+        var eq = strat._equityData || strat.equityData;
+        if (typeof eq === 'function') eq = eq();
+        if (eq && typeof eq.value === 'function') eq = eq.value();
+        if (Array.isArray(eq)) data = eq;
         if (data.length === 0 && strat.bars) {
           var bars = typeof strat.bars === 'function' ? strat.bars() : strat.bars;
           if (bars && typeof bars.lastIndex === 'function') {

@@ -1,4 +1,4 @@
-node_modules/
+node_modules
 screenshots/
 scripts/current.pine
 temp_*

@@ -349,8 +349,12 @@ export async function save() {
   if (!editorReady) throw new Error('Could not open Pine Editor.');
 
   const c = await getClient();
-  await c.Input.dispatchKeyEvent({ type: 'keyDown', modifiers: 2, key: 's', code: 'KeyS', windowsVirtualKeyCode: 83 });
-  await c.Input.dispatchKeyEvent({ type: 'keyUp', key: 's', code: 'KeyS' });
+  // Save shortcut: Cmd+S on macOS, Ctrl+S elsewhere.
+  // CDP modifier bits: 1=Alt, 2=Control, 4=Meta(Command), 8=Shift.
+  const isMac = process.platform === 'darwin';
+  const modifiers = isMac ? 4 : 2;
+  await c.Input.dispatchKeyEvent({ type: 'keyDown', modifiers, key: 's', code: 'KeyS', windowsVirtualKeyCode: 83 });
+  await c.Input.dispatchKeyEvent({ type: 'keyUp', modifiers, key: 's', code: 'KeyS' });
   await new Promise(r => setTimeout(r, 800));
 
   // Handle "Save Script" name dialog that appears for new/unsaved scripts
@@ -373,7 +377,7 @@ export async function save() {
 
   if (dialogHandled) await new Promise(r => setTimeout(r, 500));
 
-  return { success: true, action: dialogHandled ? 'saved_with_dialog' : 'Ctrl+S_dispatched' };
+  return { success: true, action: dialogHandled ? 'saved_with_dialog' : (isMac ? 'Cmd+S_dispatched' : 'Ctrl+S_dispatched') };
 }
 
 export async function getConsole() {
