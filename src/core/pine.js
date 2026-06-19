@@ -358,13 +358,14 @@ export async function save() {
   await new Promise(r => setTimeout(r, 800));
 
   // Handle "Save Script" name dialog that appears for new/unsaved scripts
+  // Locale-aware: en "Save"/"Save Script" or zh-Hans "保存"/"保存脚本".
   const dialogHandled = await evaluate(`
     (function() {
       var saveBtn = null;
       var btns = document.querySelectorAll('button');
       for (var i = 0; i < btns.length; i++) {
         var text = btns[i].textContent.trim();
-        if (text === 'Save' && btns[i].offsetParent !== null) {
+        if (btns[i].offsetParent !== null && /^(Save|Save Script|保存|保存脚本)$/.test(text)) {
           // Check if it's in a dialog (not the Pine Editor save button)
           var parent = btns[i].closest('[class*="dialog"], [class*="modal"], [class*="popup"], [role="dialog"]');
           if (parent) { saveBtn = btns[i]; break; }

@@ -6,8 +6,23 @@ import { evaluate, evaluateAsync, getClient, safeString } from '../connection.js
 export async function create({ condition, price, message }) {
   const opened = await evaluate(`
     (function() {
-      var btn = document.querySelector('[aria-label="Create Alert"]')
-        || document.querySelector('[data-name="alerts"]');
+      // Locale-aware Create Alert button: aria-label "创建警报" (zh-Hans) /
+      // "Create Alert" (en). Falls back to the alerts panel data-name as last resort.
+      var ariaLabels = ['创建警报', 'Create Alert'];
+      var btn = null;
+      for (var i = 0; i < ariaLabels.length; i++) {
+        btn = document.querySelector('[aria-label="' + ariaLabels[i] + '"]');
+        if (btn) break;
+        // contains fallback (in case the aria-label has extra context appended)
+        var matches = document.querySelectorAll('[aria-label]');
+        for (var j = 0; j < matches.length; j++) {
+          if (matches[j].offsetParent !== null && (matches[j].getAttribute('aria-label') || '').indexOf(ariaLabels[i]) >= 0) {
+            btn = matches[j]; break;
+          }
+        }
+        if (btn) break;
+      }
+      if (!btn) btn = document.querySelector('[data-name="alerts"]');
       if (btn) { btn.click(); return true; }
       return false;
     })()
@@ -26,7 +41,8 @@ export async function create({ condition, price, message }) {
       var inputs = document.querySelectorAll('[class*="alert"] input[type="text"], [class*="alert"] input[type="number"]');
       for (var i = 0; i < inputs.length; i++) {
         var label = inputs[i].closest('[class*="row"]')?.querySelector('[class*="label"]');
-        if (label && /value|price/i.test(label.textContent)) {
+        // Locale-aware: en (price/value) + zh-Hans (价格/值)
+        if (label && /price|value|价格|值/i.test(label.textContent)) {
           var nativeSet = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
           nativeSet.call(inputs[i], ${safeString(String(price))});
           inputs[i].dispatchEvent(new Event('input', { bubbles: true }));

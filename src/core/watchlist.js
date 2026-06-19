@@ -83,18 +83,30 @@ export async function add({ symbol }) {
   if (panelState?.error) throw new Error(panelState.error);
   if (panelState?.opened) await new Promise(r => setTimeout(r, 500));
 
-  // Click the "Add symbol" button (various selectors)
+  // Click the "Add symbol" button (locale-aware: data-name first, then zh-Hans/en aria-label)
   const addClicked = await evaluate(`
     (function() {
-      var selectors = [
+      var exactSelectors = [
         '[data-name="add-symbol-button"]',
-        '[aria-label="Add symbol"]',
-        '[aria-label*="Add symbol"]',
         'button[class*="addSymbol"]',
       ];
-      for (var s = 0; s < selectors.length; s++) {
-        var btn = document.querySelector(selectors[s]);
-        if (btn && btn.offsetParent !== null) { btn.click(); return { found: true, selector: selectors[s] }; }
+      for (var s = 0; s < exactSelectors.length; s++) {
+        var btn = document.querySelector(exactSelectors[s]);
+        if (btn && btn.offsetParent !== null) { btn.click(); return { found: true, selector: exactSelectors[s] }; }
+      }
+      // Locale-aware aria-label: zh-Hans "添加商品代码" / en "Add symbol"
+      var ariaLabels = ['添加商品代码', 'Add symbol'];
+      for (var a = 0; a < ariaLabels.length; a++) {
+        var al = ariaLabels[a];
+        var byAl = document.querySelector('[aria-label="' + al + '"]');
+        if (byAl && byAl.offsetParent !== null) { byAl.click(); return { found: true, method: 'aria-label:' + al }; }
+        var contains = document.querySelectorAll('[aria-label]');
+        for (var k = 0; k < contains.length; k++) {
+          if (contains[k].offsetParent !== null && (contains[k].getAttribute('aria-label') || '').indexOf(al) >= 0) {
+            contains[k].click();
+            return { found: true, method: 'aria-contains:' + al };
+          }
+        }
       }
       // Fallback: find + button in right panel
       var container = document.querySelector('[class*="layout__area--right"]');
@@ -102,7 +114,7 @@ export async function add({ symbol }) {
         var buttons = container.querySelectorAll('button');
         for (var i = 0; i < buttons.length; i++) {
           var ariaLabel = buttons[i].getAttribute('aria-label') || '';
-          if (/add.*symbol/i.test(ariaLabel) || buttons[i].textContent.trim() === '+') {
+          if (/add.*symbol|添加.*商品/i.test(ariaLabel) || buttons[i].textContent.trim() === '+') {
             buttons[i].click();
             return { found: true, method: 'fallback' };
           }
