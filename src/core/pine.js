@@ -365,7 +365,7 @@ export async function save() {
       var btns = document.querySelectorAll('button');
       for (var i = 0; i < btns.length; i++) {
         var text = btns[i].textContent.trim();
-        if (btns[i].offsetParent !== null && /^(Save|Save Script|保存|保存脚本)$/.test(text)) {
+        if (btns[i].offsetParent !== null && /^(Save(\sScript)?|保存(脚本)?)$/.test(text)) {
           // Check if it's in a dialog (not the Pine Editor save button)
           var parent = btns[i].closest('[class*="dialog"], [class*="modal"], [class*="popup"], [role="dialog"]');
           if (parent) { saveBtn = btns[i]; break; }

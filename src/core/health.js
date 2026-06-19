@@ -132,7 +132,7 @@ export async function uiState() {
         'add_to_chart':   /(add to chart|添加到图表)/i,
         'save_and_add':   /(save and add|保存并添加)/i,
         'update_on_chart':/(update on chart|更新到图表)/i,
-        'save':           /^(Save|Save Script|保存|保存脚本)$/,
+        'save':           /^(Save(\sScript)?|保存(脚本)?)$/,
         'saved':          /^(Saved|已保存)/,
         'publish_script': /(publish script|发布脚本)/i,
         'compile_errors': /(compile errors?|编译错误)/i,

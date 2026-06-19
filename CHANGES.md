@@ -47,6 +47,30 @@ Root causes documented in `trading-system` repo:
   security restriction, not a code bug — left as-is, documented so callers know
   to add strategies manually in the Desktop UI.
 
+- **Bug 4 — Chinese (zh-Hans) TradingView UI: several UI-automation buttons
+  silently fail** (`src/core/ui.js`, `alerts.js`, `watchlist.js`, `pine.js`,
+  `health.js`; new `src/core/locale.js`).
+  Root cause: selectors hardcoded to English DOM (`aria-label="Create Alert"`,
+  `aria-label="Add symbol"`, `text === 'Save'`, `/open anyway|don't save/i`,
+  `data-name="alerts-button"` etc). On cn.tradingview.com (lang=`zh-Hans`):
+  aria-labels are localized (`创建警报` / `添加商品代码`), some elements carry no
+  `data-name` at all, and the data-name values that DO exist drifted (`base`
+  instead of `base-watchlist-widget-button`, `alerts` instead of `alerts-button`).
+  Fix — three layers, in priority order:
+    1. **Prefer `data-name`** (language-independent TradingView IDs) when present.
+    2. **Per-locale aria-label fallbacks** — `LOCALE_LABELS` / `LOCALE_BUTTONS`
+       maps in `locale.js` carry both zh-Hans and en variants.
+    3. **Click/find text matcher upgraded** to exact → startsWith → contains
+       (case-insensitive), scoped to interactive elements first, so nested
+       container divs don't get clicked instead of the real button.
+  Also: dialog button regexes bilingual (`Save|Save Script|保存|保存脚本`,
+  `open anyway|don't save|discard|仍然打开|不保存|放弃`).
+  Verified live against cn.tradingview.com: `tv ui panel alerts/watchlist` open
+  via aria-label `警报` + data-name `alerts`; `tv ui click -b aria-label -v 警报`
+  hits; `tv ui click -b data-name -v alerts` hits. `locale.js` importable;
+  bilingual regex unit checks pass (`Save` ✓, `保存` ✓, `保存脚本` ✓,
+  `compile errors` ✓, `编译错误` ✓).
+
 ### Adopted upstream PRs (batch + manual)
 Batch cherry-pick (all 10 clean, no conflicts):
 - #228 — fix "evaluate is not defined" in `scrollToDate` / `symbolInfo`
